@@ -1,6 +1,6 @@
 # what the app needs on the phone; flet build bundles these
 flet==1.0.4
-flet-webview==1.0.4
+flet-webview==1.0.5
 # single-device mode: SSH with the app's own key (Flet ships mobile builds of
 # these at pypi.flet.dev; the versions match its Python 3.14 builds)
 paramiko==3.5.1
