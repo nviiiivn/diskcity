@@ -7,4 +7,4 @@ paramiko==3.5.1
 cryptography==48.0.0
 bcrypt==5.0.0
 pynacl==1.6.2
-flet-permission-handler==1.0.4
+flet-permission-handler==1.0.5
