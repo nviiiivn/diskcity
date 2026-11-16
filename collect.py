@@ -65,8 +65,12 @@ def validate(cfg):
             raise ValueError('every device needs a unique id made of letters, digits, - _ or . (got %r)' % dev_id)
         seen.add(dev_id)
         dev.setdefault('name', dev_id)
-        if not dev.get('local') and not dev.get('push') and not ssh_target(dev):
-            raise ValueError('device %s needs local: true, push: true, or a host to ssh to' % dev_id)
+        if dev.get('node'):
+            if not re.match(r'^https?://[^\s/]+', str(dev['node'])):
+                raise ValueError('device %s: node is another hub\'s address, like http://other-hub:7171' % dev_id)
+            dev['drives'] = []      # another hub says what its drives are
+        elif not dev.get('local') and not dev.get('push') and not ssh_target(dev):
+            raise ValueError('device %s needs local: true, push: true, node: <another hub>, or a host to ssh to' % dev_id)
         for d in dev.setdefault('drives', []) or []:
             if not d.get('name') or not re.match(r'^(/|[A-Za-z]:[\\/])', str(d.get('path', ''))):
                 raise ValueError('every drive on %s needs a name and an absolute path' % dev_id)
@@ -133,16 +137,17 @@ def hub_pubkey():
         return f.read().strip()
 
 
-def agent_sha():
-    with open(AGENT, 'rb') as f:
+def agent_sha(script=AGENT):
+    with open(script, 'rb') as f:
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def restricted_key_line():
-    """An authorized_keys line that lets the hub's key run this exact agent.py and nothing else."""
+def restricted_key_line(script=AGENT):
+    """An authorized_keys line that lets the hub's key run this exact script (agent.py unless
+    another is named, e.g. the toolbox's tools agent) and nothing else."""
     code = ("import sys,hashlib;c=sys.stdin.buffer.read();h=hashlib.sha256(c).hexdigest();"
             "sys.exit('dc-ohair: agent '+h[:12]+' is not the one this key allows') if h!='%s' else None;"
-            "sys.argv=['agent',sys.argv[-1].split()[-1]];exec(compile(c,'agent.py','exec'))") % agent_sha()
+            "sys.argv=['agent',sys.argv[-1].split()[-1]];exec(compile(c,'agent.py','exec'))") % agent_sha(script)
     opts = 'command="python3 -c \\"%s\\" $SSH_ORIGINAL_COMMAND",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty' % code
     return opts + ' ' + hub_pubkey()
 
@@ -200,12 +205,13 @@ def password(dev):
     return p.stdout.strip()
 
 
-def run_agent(dev, spec, timeout):
-    """Runs agent.py with spec on dev. Returns (parsed JSON, None) or (None, plain-language error)."""
+def run_agent(dev, spec, timeout, script=AGENT):
+    """Runs agent.py (or another script of the same kind, e.g. the toolbox's tools agent) with spec
+    on dev. Returns (parsed JSON, None) or (None, plain-language error)."""
     arg = base64.b64encode(json.dumps(spec).encode()).decode()
     env = None
     if dev.get('local'):
-        cmd, stdin = [sys.executable, AGENT, arg], subprocess.DEVNULL
+        cmd, stdin = [sys.executable, script, arg], subprocess.DEVNULL
     else:
         cmd = ['ssh', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ServerAliveInterval=30']
         cmd += identity_args()
@@ -225,7 +231,7 @@ def run_agent(dev, spec, timeout):
             cmd = ['sshpass', '-e'] + cmd
         else:
             cmd.insert(1, '-oBatchMode=yes')
-        stdin = open(AGENT, 'rb')
+        stdin = open(script, 'rb')
     try:
         p = subprocess.run(cmd, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -309,8 +315,52 @@ def store(dev, out, cfg):
     return msg
 
 
+# ---------- another Disk City hub ----------
+
+def node_report(dev, timeout=120):
+    """Another hub's city (its /api/node/city, with the share token it gave this one) as a report
+    of this device: each of its devices' drives becomes a drive here, named "Device · Drive".
+    Returns (report, None) or (None, plain-language error)."""
+    import urllib.error, urllib.request
+    url = str(dev.get('node') or '').rstrip('/')
+    if not re.match(r'^https?://', url):
+        return None, 'The other hub\'s address should start with http:// or https://.'
+    req = urllib.request.Request(url + '/api/node/city', headers={
+        'Authorization': 'Bearer ' + (dev.get('node_token') or ''), 'User-Agent': 'dc-ohair-hub'})
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            city = json.loads(res.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return None, ("That hub turned this one's token away. On it, make a new share (Settings → Security → "
+                          "Share this city) and paste the new token here.")
+        if e.code == 404:
+            return None, 'That address answers, but not as a Disk City hub new enough to share its city (0.9 or later).'
+        return None, 'That hub said %d.' % e.code
+    except (urllib.error.URLError, OSError) as e:
+        return None, "Can't reach %s: %s" % (url, getattr(e, 'reason', e))
+    except ValueError:
+        return None, 'That address answered with something that is not a Disk City.'
+    drives = []
+    for d in city.get('devices') or []:
+        for dr in d.get('drives') or []:
+            if isinstance(dr, dict) and dr.get('tree'):
+                drives.append(dict(dr, name='%s · %s' % (d.get('name', '?'), dr.get('name', '?'))))
+    return {'agent': 'node', 'host': url, 'drives': drives, 'secs': round(time.time() - t0, 1),
+            'scanned': city.get('generated') or time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+            'node': {'version': city.get('disk_city'), 'devices': len(city.get('devices') or [])}}, None
+
+
 def collect(dev, cfg):
     progress[dev['id']] = {'state': 'scanning', 'since': time.time()}
+    if dev.get('node'):
+        out, err = node_report(dev)
+        if err:
+            return set_status(dev['id'], False, err)
+        save(os.path.join(DATA, dev['id'] + '.json'), out)
+        record_history(dev['id'], out, int(cfg['hub']['history_days']))
+        return set_status(dev['id'], True, '%d drives from %d devices on that hub' % (len(out['drives']), out['node']['devices']))
     out, err = run_agent(dev, scan_spec(cfg, dev['drives']), float(cfg['scan']['timeout_hours']) * 3600)
     if err:
         return set_status(dev['id'], False, err)
@@ -320,7 +370,7 @@ def collect(dev, cfg):
 def collect_all(cfg, only=None):
     os.makedirs(DATA, exist_ok=True)
     # push devices send their own reports; the hub can't start their scans
-    devices = [d for d in cfg['devices'] if (not only or d['id'] in only) and d.get('drives') and not d.get('push')]
+    devices = [d for d in cfg['devices'] if (not only or d['id'] in only) and (d.get('drives') or d.get('node')) and not d.get('push')]
     for d in devices:
         progress[d['id']] = {'state': 'waiting'}
     threads = [threading.Thread(target=collect, args=(d, cfg)) for d in devices]

@@ -82,6 +82,7 @@ export function showLogin(me) {
 function authOf(dev) {
   if (dev.local) return 'local';
   if (dev.push) return 'push';
+  if (dev.node !== undefined) return 'node';
   return dev.password_cmd ? 'cmd' : 'key';
 }
 
@@ -141,9 +142,11 @@ function deviceForm(dev, payload, opts = {}) {
       <label><input type="radio" name="auth" value="key" ${auth === 'key' ? 'checked' : ''}> SSH key <small>recommended</small></label>
       <label><input type="radio" name="auth" value="cmd" ${auth === 'cmd' ? 'checked' : ''}> password_cmd</label>
       <label><input type="radio" name="auth" value="push" ${auth === 'push' ? 'checked' : ''}> It sends to the hub <small>Windows, or out of reach</small></label>
+      <label><input type="radio" name="auth" value="node" ${auth === 'node' ? 'checked' : ''}> Another Disk City <small>a second house, a friend's server</small></label>
     </fieldset>
     ${auth === 'push' ? pushHelp(dev) : ''}
-    ${auth === 'local' || auth === 'push' ? '' : `<div class="grid3">
+    ${auth === 'node' ? nodeFields(dev) : ''}
+    ${auth === 'local' || auth === 'push' || auth === 'node' ? '' : `<div class="grid3">
       <label>Host <input data-f="host" value="${esc(dev.host)}" placeholder="192.168.1.20 or nas.local" class="mono"></label>
       <label>User <input data-f="user" value="${esc(dev.user)}" placeholder="me" class="mono"></label>
       <label>Port <input data-f="port" value="${esc(dev.port)}" placeholder="22" inputmode="numeric" class="mono"></label>
@@ -155,16 +158,30 @@ function deviceForm(dev, payload, opts = {}) {
       <label>Command prefix <input data-f="command_prefix" value="${esc(dev.command_prefix)}" placeholder="caffeinate -i   (keeps a Mac awake)" class="mono"></label>
       <label>Id <input data-f="id" value="${esc(dev.id)}" class="mono"></label>
     </details>
-    <h4>Drives</h4>
-    <div class="drives">${drives || (auth === 'push' ? '<p class="muted">Leave this empty and the device picks its own real drives on its first report. You can untick them here afterwards.</p>' : '<p class="muted">No drives yet. Find them, or add a path.</p>')}</div>
+    ${auth === 'node' ? '' : `<h4>Drives</h4>`}
+    <div class="drives">${auth === 'node' ? '' : drives || (auth === 'push' ? '<p class="muted">Leave this empty and the device picks its own real drives on its first report. You can untick them here afterwards.</p>' : '<p class="muted">No drives yet. Find them, or add a path.</p>')}</div>
     <div class="row">
-      ${auth === 'push' ? '' : '<button type="button" data-act="detect">Find drives</button>'}
-      <button type="button" class="ghost" data-act="add-drive">+ Add a path</button>
+      ${auth === 'push' || auth === 'node' ? '' : '<button type="button" data-act="detect">Find drives</button>'}
+      ${auth === 'node' ? '' : '<button type="button" class="ghost" data-act="add-drive">+ Add a path</button>'}
       ${auth === 'push' ? '' : '<button type="button" class="ghost" data-act="test">Test connection</button>'}
       ${opts.saved && auth !== 'push' ? '<button type="button" class="ghost" data-act="scan">Scan now</button>' : ''}
     </div>
     <div class="result" aria-live="polite"></div>
   </div>`;
+}
+
+// Another hub, shown here as one village: its address and the token it made in its own
+// Settings → Security → Share this city. The token is kept on this hub and never shown again.
+function nodeFields(dev) {
+  return `<div class="help node"><p>That hub's whole city shows up here as one village, read-only: each of its drives is a
+    block, named after its device. It shares only its own devices and their drive trees, nothing else.</p>
+    <div class="grid2">
+      <label>Its address <input data-f="node" value="${esc(dev.node)}" placeholder="https://sams-hub.example:7171" class="mono"></label>
+      <label>Share token <input data-f="node_token" type="password" value="" autocomplete="off" class="mono"
+        placeholder="${dev.node_paired ? 'kept; paste a new one to change it' : 'from its Settings → Security'}"></label>
+    </div>
+    <label class="tick"><input type="checkbox" data-flag="node_alerts" ${dev.node_alerts ? 'checked' : ''}> Alert me when its drives are full or failing too</label>
+    <p class="muted">On the other hub: Settings → Security → Share this city, give it a name, and copy the token it shows.</p></div>`;
 }
 
 function pushHelp(dev) {
@@ -175,15 +192,23 @@ function pushHelp(dev) {
     <div class="pushcmd" aria-live="polite"></div></div>`;
 }
 
+// Each system's line downloads dc-agent (agent-go/), one file with nothing to install, for its
+// processor; the line under it is the same with Python instead (push.py), for a box the hub's
+// download can't reach. sh -c keeps the line working when the device's shell is fish.
 function pushCommands(hub, token) {
+  const bin = (os) => `sh -c 'cd ~ && a=$(uname -m); case $a in x86_64|amd64) a=amd64;; aarch64|arm64) a=arm64;; arm*) a=arm;; esac; `
+    + `{ curl -fsSLo dc-agent ${hub}/dl/dc-agent-${os}-$a || wget -qO dc-agent ${hub}/dl/dc-agent-${os}-$a; } && chmod +x dc-agent && ./dc-agent install --hub ${hub} --token ${token}'`;
   const sh = `cd ~ && python3 -c "import urllib.request as u; u.urlretrieve('${hub}/push.py', 'dc-push.py')" && python3 dc-push.py install --hub ${hub} --token ${token}`;
   return [
-    ['Linux', sh, 'Needs python3. Adds a daily systemd timer, or a cron job.'],
-    ['macOS', sh, "Needs Apple's python3 (run xcode-select --install once). Adds a launchd job that keeps the Mac awake while it scans."],
-    ['LibreELEC / Kodi', sh, 'Run it over SSH as root. Turn on cron in LibreELEC Settings → Services so the daily run happens.'],
-    ['NAS', sh, 'Run it over SSH. On Synology, install Python 3 from Package Center first.'],
-    ['Windows', `iwr ${hub}/push.py -OutFile $env:USERPROFILE\\dc-push.py; python $env:USERPROFILE\\dc-push.py install --hub ${hub} --token ${token}`,
-      "Paste it into PowerShell. Needs Python (winget install Python.Python.3.12); if 'python' isn't found, use 'py -3'. Adds a Task Scheduler job."],
+    ['Linux', bin('linux'), 'Nothing to install first. Adds a daily systemd timer, or a cron job.', sh, 'Needs python3.'],
+    ['macOS', bin('darwin'), 'Nothing to install first. Adds a launchd job that keeps the Mac awake while it scans.', sh,
+      "Needs Apple's python3 (run xcode-select --install once)."],
+    ['LibreELEC / Kodi', bin('linux'), 'Run it over SSH as root. Turn on cron in LibreELEC Settings → Services so the daily run happens.', sh, ''],
+    ['NAS', bin('linux'), 'Run it over SSH. Nothing to install first, Synology included.', sh, 'On Synology, install Python 3 from Package Center first.'],
+    ['Windows', `$a = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {'arm64'} else {'amd64'}; iwr ${hub}/dl/dc-agent-windows-$a.exe -OutFile $env:USERPROFILE\\dc-agent.exe; & $env:USERPROFILE\\dc-agent.exe install --hub ${hub} --token ${token}`,
+      'Paste it into PowerShell. Nothing to install first. Adds a Task Scheduler job.',
+      `iwr ${hub}/push.py -OutFile $env:USERPROFILE\\dc-push.py; python $env:USERPROFILE\\dc-push.py install --hub ${hub} --token ${token}`,
+      "Needs Python (winget install Python.Python.3.12); if 'python' isn't found, use 'py -3'."],
   ];
 }
 
@@ -195,7 +220,8 @@ function showPushCommand(box, dev, hub, token) {
     <p class="waiting">Waiting for ${esc(dev.name || 'the device')} to report in…</p>`;
   const pick = (i) => {
     box.querySelectorAll('[data-os]').forEach((b) => b.setAttribute('aria-selected', String(+b.dataset.os === i)));
-    box.querySelector('.oscmd').innerHTML = copyBox(cmds[i][1]) + `<p class="muted">${esc(cmds[i][2])}</p>`;
+    box.querySelector('.oscmd').innerHTML = copyBox(cmds[i][1]) + `<p class="muted">${esc(cmds[i][2])}</p>`
+      + `<details class="alt"><summary>Or with Python instead</summary>${copyBox(cmds[i][3])}<p class="muted">${esc(cmds[i][4] || 'Needs python3.')}</p></details>`;
   };
   box.querySelector('.os').addEventListener('click', (e) => { const b = e.target.closest('[data-os]'); if (b) pick(+b.dataset.os); });
   pick(/Win/.test(navigator.platform) ? 4 : 0);
@@ -281,6 +307,10 @@ function bindDiscover(root, devices, onAdded) {
 function bindDevice(root, dev, payload, rerender, persist) {
   root.addEventListener('input', (e) => {
     const t = e.target;
+    if (t.dataset.flag) {
+      if (t.checked) dev[t.dataset.flag] = true; else delete dev[t.dataset.flag];
+      return;
+    }
     if (t.dataset.f) {
       let v = t.value;
       if (t.dataset.f === 'port') v = v ? parseInt(v, 10) || '' : '';
@@ -301,6 +331,7 @@ function bindDevice(root, dev, payload, rerender, persist) {
     dev.local = v === 'local' || undefined;
     if (!dev.local) delete dev.local;
     if (v === 'push') { dev.push = true; delete dev.host; delete dev.user; delete dev.port; } else delete dev.push;
+    if (v === 'node') { dev.node = dev.node || ''; delete dev.host; delete dev.user; delete dev.port; dev.drives = []; } else { delete dev.node; delete dev.node_token; delete dev.node_alerts; }
     if (v !== 'cmd') delete dev.password_cmd;
     if (v === 'cmd' && !dev.password_cmd) dev.password_cmd = '';
     rerender();
@@ -334,6 +365,7 @@ function bindDevice(root, dev, payload, rerender, persist) {
       if (act === 'test') {
         const r = await api('/api/test', { device: probeDevice(dev) });
         if (!r.ok) { out.innerHTML = `<p class="err">${esc(r.error)}</p>`; return; }
+        if (r.node) { out.innerHTML = `<p class="ok">Connected to ${esc(r.host)}: ${r.drives} drives on ${r.devices} devices.</p>`; return; }
         const paths = (r.paths || []).map((p) => `<li class="${p.readable ? 'ok' : 'err'}">${esc(p.path)}: ${p.readable ? 'readable' : p.exists ? "can't read it (permission denied). Use a user that can, or leave it out." : "doesn't exist on that device"}</li>`).join('');
         out.innerHTML = `<p class="ok">Connected to ${esc(r.host)} · python ${esc(r.python)}</p>${paths ? `<ul>${paths}</ul>` : ''}`;
       } else if (act === 'detect') {
@@ -485,7 +517,7 @@ Secret from this environment variable: DC_OIDC_SECRET`],
   }
   return [
     ['1. Caddyfile: VoidAuth guards the page; push agents keep their own way in with their tokens', `${host(dc)} {
-  @agents path /agent.py /push.py /api/push/spec /api/report
+  @agents path /agent.py /push.py /dl/* /api/push/spec /api/report /api/node/city
   handle @agents {
     reverse_proxy dc-ohair:7171
   }
@@ -627,7 +659,14 @@ function render(dlg) {
       ${S.cfg.devices.filter((d) => d.push && d.paired).map((d) => `<div class="row"><b>${esc(d.name)}</b><span class="muted">sends its own reports</span>
         <button type="button" class="danger" data-revoke="${esc(d.id)}">Revoke</button></div>`).join('')
         || '<p class="muted">No device sends its own reports yet.</p>'}
-      <p class="muted">Revoking stops that device's reports right away. Make a new command on its device page to let it back in.</p>`;
+      <p class="muted">Revoking stops that device's reports right away. Make a new command on its device page to let it back in.</p>
+      <h4>Share this city</h4>
+      <p class="muted">Let another Disk City hub show this one as a village of its own: a second house, or a friend's server. It sees your devices and what is on their drives (the same size trees this page shows), read-only, and nothing else: not your settings, not who can log in. It asks again on each of its scans; take its share away and it stops.</p>
+      ${(S.cfg.hub.shares || []).map((s) => `<div class="row"><b>${esc(s.label)}</b><span class="muted">since ${esc(s.created)}</span>
+        <button type="button" class="danger" data-unshare="${esc(s.label)}">Stop sharing</button></div>`).join('') || '<p class="muted">Not shared with any hub.</p>'}
+      <div class="row"><input data-share-label placeholder="Who it's for, e.g. Sam's house" aria-label="Who the share is for">
+        <button type="button" data-share>Make a share token</button></div>
+      <div class="sharecmd" aria-live="polite"></div>`;
   } else if (S.tab === 'backup') {
     html = `<p>Download your config (no admin password inside; password_cmd lines are).</p>
       <div class="row"><a class="button" href="/api/settings/export" download>Export config</a></div>
@@ -760,6 +799,25 @@ function wire(body, dlg) {
         const r = await api('/api/health/test', { health: S.cfg.hub.health || {} });
         out.textContent = r.ok ? `Scrutiny knows ${r.disks} disk${r.disks === 1 ? '' : 's'}; ${r.matched} of your drives matched so far.` : r.error;
         out.className = 'result ' + (r.ok ? 'ok' : 'err');
+      } catch (err) { out.textContent = err.message; out.className = 'result err'; }
+      return;
+    }
+    if (t.closest('[data-share]')) {
+      const box = body.querySelector('.sharecmd');
+      try {
+        const r = await api('/api/node/share', { label: body.querySelector('[data-share-label]').value });
+        S.cfg.hub.shares = r.shares;
+        box.innerHTML = `<p>On the other hub, add a device, choose <b>Another Disk City</b>, and paste these. The token is shown only now.</p>
+          ${copyBox(r.hub, 'Copy address')}${copyBox(r.token, 'Copy token')}`;
+      } catch (err) { box.innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+      return;
+    }
+    const us = t.closest('[data-unshare]');
+    if (us) {
+      try {
+        const r = await api('/api/node/unshare', { label: us.dataset.unshare });
+        S.cfg.hub.shares = r.shares;
+        render(dlg);
       } catch (err) { out.textContent = err.message; out.className = 'result err'; }
       return;
     }
