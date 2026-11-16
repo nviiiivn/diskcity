@@ -16,6 +16,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import collect
 import notify as notifier
 import oidc
+from toolbox import api as tools
 from collect import DATA, load
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -520,6 +521,7 @@ class Hub:
     def _scan(self, only):
         try:
             collect.collect_all(self.cfg, only)
+            tools.after_scan(self)
             self.notify()
         finally:
             self.running = False
@@ -727,6 +729,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(self.hub.status())
         if path == '/api/settings':
             return self.send_json(self.settings_payload())
+        if path.startswith('/api/tools/'):
+            return tools.get(self, path, query)
         if path == '/api/settings/export':
             import yaml
             text = "# Disk City config export\n" + yaml.safe_dump(self.hub.public_config(), sort_keys=False, allow_unicode=True)
@@ -792,6 +796,8 @@ class Handler(SimpleHTTPRequestHandler):
             only = set(data.get('devices') or []) or None
             started = hub.scan(only)
             return self.send_json({'started': started, 'running': hub.running}, 202 if started else 409)
+        if path.startswith('/api/tools/'):
+            return tools.post(self, path, data)
         if hub.demo:
             return self.demo_post(path, data)
         if path in ('/api/settings', '/api/settings/import'):
@@ -1072,6 +1078,8 @@ def main():
     if args.demo:
         import demo
         built = demo.build()
+        import toolbox.demo
+        toolbox.demo.plant(built['city'])
         hub = Hub(collect.validate(built['config']), demo=built)
     else:
         cfg = collect.load_config(path) if os.path.exists(path) else collect.validate({})
