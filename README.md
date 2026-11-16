@@ -1,23 +1,29 @@
 <p align="center"><img src="web/logo.svg" width="96" alt="Disk City logo"></p>
 
 <h1 align="center">Disk City</h1>
-<p align="center"><i>a.k.a. D.C. O'HAIR: Data City Over Here Am I Right?</i></p>
 
-<p align="center"><sub><i>"It's a UNIX system! I know this!"</i></sub></p>
-
-<p align="center"><b>A usable, good, easy, network-wide, large-scale, fsv-style, lovable disk city.</b></p>
-
-Disk City turns the drives on all your computers into one 3D city you can fly through.
-
-Each device is a district, each drive is a block, and each big file or folder is a building. The buildings are colored by what's inside: Music, Games, Series, Movies and Other. Next to the city is a plain table of every drive: Used, Free, Total, and how much of each category it holds.
-
-It's for anyone with a few machines and a pile of disks: a media server, a gaming PC, a laptop or two. It answers the question "where did all my space go?" for all of them at once.
+<p align="center"><b>Every drive on every computer you own, as one 3D city you can fly through.</b></p>
+<p align="center"><i>a.k.a. D.C. O'HAIR: Data City Over Here Am I Right?</i><br><sub><i>"It's a UNIX system! I know this!"</i></sub><br><sub>A usable, good, easy, network-wide, large-scale, fsv-style, lovable disk city.</sub></p>
 
 <p align="center"><img src="docs/media/flyin.gif" width="900" alt="Flying in over the whole city"></p>
 
-- **Read-only.** It never deletes, moves or changes a file on any device.
-- **Nothing to install on your devices.** The hub sends a small Python script over SSH and reads the answer. The device only needs `python3`.
-- **Self-hosted.** It's one small Python service plus a web page. No cloud and no account.
+You have a media server, a gaming PC, a laptop and a NAS, and you're not sure where the space went. Disk City reads them all over SSH and lays them out side by side: each computer is a district, each drive a block, each big folder a building, colored by Music, Games, Series, Movies and Other. The biggest buildings are the biggest folders. That's the whole idea.
+
+**Why you might want it**
+
+- **One answer for the whole house.** Not one disk at a time, but every drive on every machine in a single view, with a plain Used / Free / Total table next to the city.
+- **It can't hurt anything.** It only reads. It never deletes, moves or changes a file, and your devices need nothing installed but `python3`.
+- **It stays yours.** One small Python service and a web page on your own network. No cloud, no account.
+
+It's a small, niche tool, and it means to stay that way.
+
+**Ways to run it**
+
+| | |
+|---|---|
+| **Web portal** | Docker, or one install script on any always-on Linux box. Open `http://your-hub:7171` from any browser. See [Quick start](#quick-start). |
+| **Phone app** | Android and iOS, built by GitHub Actions from [`app/`](app/README.md). It talks to your hub, or scans one computer by itself. |
+| **Just look** | `python3 hub.py --demo` shows a made-up home network. Nothing on your machine is scanned. |
 
 ## What you can do with it
 
@@ -332,7 +338,7 @@ Every option is explained in **[docs/configuration.md](docs/configuration.md)**.
 
 ## JSON API
 
-Everything the page shows comes from a JSON API, and it's meant to stay stable so other tools, and later phone apps, can use it. When a login is on, send the session cookie from `/api/login`. Every `POST` or `PUT` needs the header `X-DC: 1`.
+Everything the page shows comes from a JSON API, and it's meant to stay stable so other tools and the phone app can use it. When a login is on, send the session cookie from `/api/login`. Every `POST` or `PUT` needs the header `X-DC: 1`.
 
 | Method | Path | What it does |
 |---|---|---|
@@ -368,7 +374,7 @@ curl -s -X POST -H 'X-DC: 1' http://localhost:7171/api/scan
 
 Coming next, roughly in this order:
 
-- **Phone apps** (iOS and Android) on the same JSON API.
+- **Desktop builds** of the app (Windows, macOS, Linux). The app is built with Flet, which can make them from the same code; they just aren't set up yet.
 
 ---
 
