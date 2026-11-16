@@ -120,7 +120,7 @@ function prep(data) {
       const seen = sum(node.c);
       const unseen = dr.fs ? Math.max(0, dr.fs.used - seen) : 0;
       node.s = seen;
-      if (unseen > Math.max(GiB, dr.fs.used * 0.01)) {
+      if (dr.fs && unseen > Math.max(GiB, dr.fs.used * 0.01)) {
         node.k.push({ n: seen ? 'not seen by the scan' : 'not broken down yet', kind: 'unseen',
           c: zero(), s: unseen, f: 0, m: 0, k: [], p: node, drive: dr });
         node.s += unseen;
