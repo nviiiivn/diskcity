@@ -7,7 +7,9 @@
 
 <p align="center"><img src="docs/media/flyin.gif" width="900" alt="Flying in over the whole city"></p>
 
-You have a media server, a gaming PC, a laptop and a NAS, and you're not sure where the space went. Disk City reads them all over SSH and lays them out side by side: each computer is a district, each drive a block, each big folder a building, colored by Music, Games, Series, Movies and Other. The biggest buildings are the biggest folders. That's the whole idea.
+Disk City draws every drive on your network as a 3D city you can fly around. Computers are districts, drives are blocks, folders are buildings.
+
+Think the Jurassic Park file browser, but it's your stuff and it actually works. City, theme park, mainframe, call it what you like. It'll also show you what's eating space, but mostly it's just cool to look at.
 
 **Why you might want it**
 
