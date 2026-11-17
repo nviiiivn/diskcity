@@ -9,6 +9,8 @@
 
 You have a media server, a gaming PC, a laptop and a NAS, and you're not sure where the space went. Disk City reads them all over SSH and lays them out side by side: each computer is a district, each drive a block, each big folder a building, colored by Music, Games, Series, Movies and Other. The biggest buildings are the biggest folders. That's the whole idea.
 
+Or maybe there's no space problem at all. Maybe you just want to see your system, or see your data as a city and fly through it like it's *Hackers* or *Johnny Mnemonic* or any of those 90s movies where files were buildings. Or maybe you want to look at it and yell "It's a UNIX system! I know this!" Because of course you do.
+
 **Why you might want it**
 
 - **One answer for the whole house.** Not one disk at a time, but every drive on every machine in a single view, with a plain Used / Free / Total table next to the city.
